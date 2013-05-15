@@ -85,7 +85,7 @@ def baseline(queries, features, dfDict, totalDocNum):
       for url in urls:
         info = features[query][url]
         doc_vector = []
-        body_length = info["body_length"]
+        body_length = info["body_length"] + 500
         for term in terms:
           tf_url = 0
           for i in range(0, len(url)-len(term)+1):
@@ -123,7 +123,7 @@ def baseline(queries, features, dfDict, totalDocNum):
         cos_scores[url] = cos_score
       
       # Sort query results with cos_scores in decreasing order 
-       
+      sorted(cos_scores.items(), key=lambda x: x[1])
       rankedQueries[query] = cos_scores 
     return rankedQueries
 

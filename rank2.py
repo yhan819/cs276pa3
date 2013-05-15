@@ -1,6 +1,6 @@
 import sys
 import re
-import math
+from math import log
 
 #inparams
 #  featureFile: input file containing queries and url features
@@ -55,7 +55,7 @@ def extractFeatures(featureFile):
 def baseline(queries, features, dfDict, totalDocNum):
     rankedQueries = {}
 
-    # Parameters for BM25F counts for doc
+    # Parameters for tf counts for doc
     c_url = 1
     c_title = 1
     c_header = 1
@@ -67,7 +67,7 @@ def baseline(queries, features, dfDict, totalDocNum):
       # query idf (tf not needed. All 1's)
       terms = query.split(" ")
       query_idf_list = []
-      sqr_sum = 0.0
+      float sqr_sum = 0
       for term in terms:
         df = dfDict[term]
         idf = math.log10(totalDocNum/df)
@@ -90,16 +90,16 @@ def baseline(queries, features, dfDict, totalDocNum):
           tf_url = 0
           for i in range(0, len(url)-len(term)+1):
             if url[i:i+len(term)] == term:
-              tf_url += 1
+              tf_url++
           tf_title = 0
           for word in info["title"].split(" "):
             if word == term:
-              tf_title += 1
+              tf_title++
           tf_header = 0
           for header in info["header"]:
             for word in header.split(" "):
               if word == term:
-                tf_header += 1
+                tf_header++
           tf_body = len(info["body_hits"][term])
           tf_anchor = 0
           if "anchors" in info.keys():
@@ -107,7 +107,7 @@ def baseline(queries, features, dfDict, totalDocNum):
               count_per_anchor = 0
               for word in text.split(" "):
                 if word == term:
-                  count_per_anchor += 1
+                  count_per_anchor++
               tf_anchor = tf_anchor + count_per_anchor * info["anchors"][text]
           
           tf_total = c_url*tf_url + c_title*tf_title + c_header*tf_header + c_body*tf_body + c_anchor*tf_anchor

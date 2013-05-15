@@ -127,6 +127,39 @@ def baseline(queries, features, dfDict, totalDocNum):
       rankedQueries[query] = cos_scores 
     return rankedQueries
 
+# getIdf gets returns a total number of doc and doc_freq_dict
+def getIdf():
+  term_id_f = "word.dict"
+  posting_f = "posting.dict"
+  doc_f = "doc.dict"
+
+  allqueryFile = "AllQueryTerms"
+  queryTermsDict = {}
+  docNum = 0
+  word_dict = {}
+  doc_freq_dict = {}
+  
+  file = open(allqueryFile, 'r')
+  for line in file.readlines():
+    queryTermsDict[line.strip()] = 0
+
+  file = open(doc_f, 'r')
+  for l in file.readlines():
+    docNum += 1
+  print >> sys.stderr, "totalNum = " + str(docNum)
+  
+  file = open(term_id_f, 'r')
+  for line in file.readlines():
+    parts = line.split('\t')
+    word_dict[int(parts[1])] = parts[0]
+  file = open(posting_f, 'r') 
+  for line in file.readlines():
+    parts = line.split('\t')
+    term_id = int(parts[0])
+    doc_freq = int(parts[2])
+    doc_freq_dict[word_dict[term_id]] = doc_freq
+  
+  return (docNum, doc_freq_dict)
 
 #inparams
 #  queries: contains ranked list of results for each query
@@ -145,6 +178,9 @@ def main(featureFile):
 
     #populate map with features from file
     (queries, features) = extractFeatures(featureFile)
+
+    #get idf values
+    (totalDocNum, dfDict) = getIdf()
 
     #calling baseline ranking system, replace with yours
     rankedQueries = baseline(queries, features, dfDict, totalDocNum)

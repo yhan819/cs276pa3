@@ -52,11 +52,11 @@ def extractFeatures(featureFile):
           count["len_body"] += int(value)
       elif(key == 'anchor_text'):
         anchor_text = value
-        count["len_anchor"] += len(anchor_text.split())
         if 'anchors' not in features[query][url]:
           features[query][url]['anchors'] = {}
       elif(key == 'stanford_anchor_count'):
         features[query][url]['anchors'][anchor_text] = int(value)
+        count["len_anchor"] += len(anchor_text.split()) * int(value)
       
     f.close()
     return (queries, features, count) 
@@ -77,35 +77,34 @@ def baseline(queries, features, dfDict, totalDocNum, count):
     avganchor = count["len_anchor"] * 1.0 / count["num_url"]
 
     # Parameters for tf counts for doc
-    b_url = 1
-    b_title = 1
-    b_header = 1
-    b_body = 1
-    b_anchor = 1
-    w_url = 1
-    w_title = 1
-    w_header = 1
-    w_body = 1
+    b_url = 0.2
+    b_title = 0.5
+    b_header = 0.5
+    b_body = 0.4
+    b_anchor = 0.2
+    w_url = 4
+    w_title = 2
+    w_header = 2
+    w_body = 0.1
     w_anchor = 1
-    lamb = 2
+    lamb = 1
     lamb_p = 1
-    k_1 = 5
+    k_1 = 3
 
     for query in queries.keys():
       results = queries[query]
       terms = query.split()
       scores = {}
       for doc_url in results:
-        url = re.findall(r"['\w']+:", doc_url)
         doc_score = 0.0
+        info = features[query][doc_url]
         for t in terms:
           wdt = 0.0
-          info = features[query][doc_url]
           #ftf for url
           fturl = 0.0
           tfurl = 0
-          for u in url:
-            if t == u:
+          for i in range(0, len(doc_url)-len(t)+1):
+            if doc_url[i:i+len(t)] == t:
               tfurl += 1
           fturl += 1.0 * tfurl / (1 + b_url * ((len(doc_url) / avgurl) - 1))
           wdt += w_url * fturl 
@@ -140,32 +139,35 @@ def baseline(queries, features, dfDict, totalDocNum, count):
             ftbody += 1.0 * tfbody / (1 + b_body * ((info["body_length"] / avgbody) - 1))
             wdt += w_body * ftbody
           # ftf for anchor
-          if "anchor" in info:
+          if "anchors" in info:
             ftanchor = 0.0
             tfanchor = 0
             anchor_len = 0
             for text in info["anchors"]:
               c_p_a = 0
-              anchor_len += len(text.split())
               for word in text.split():
                 if word == t:
                   c_p_a += 1
               tfanchor += c_p_a * info["anchors"][text]
+              anchor_len += len(text.split()) * info["anchors"][text]
             ftanchor += 1.0 * tfanchor / (1 + b_anchor * ((anchor_len / avganchor) - 1))
             wdt += w_anchor * ftanchor
           
-          #nontextual: pagerank
-          nont = lamb * 1.0 * math.log(lamb_p + info["pagerank"])
  
           #idf
           if t not in dfDict:
             df = 1
           else:
             df = dfDict[t] + 1
-          idf = math.log((totalDocNum + 1)/df)
-          
-          doc_score += wdt * idf / (k_1 + wdt) + nont
-        scores[doc_url] = doc_score
+          idf = math.log10((totalDocNum + 1)/df)
+          doc_score += wdt * idf / (k_1 + wdt)
+
+        #nontextual: pagerank
+        nont = lamb * 1.0 * math.log(lamb_p + info["pagerank"])
+        #nont = lamb * info["pagerank"] / (lamb_p + info["pagerank"])
+        #nont = lamb / (lamb_p + math.exp(-1 * info["pagerank"] * lamb_p))
+        
+        scores[doc_url] = doc_score + nont
       rankedQueries[query] = sorted(results, key = lambda x: scores[x], reverse=True) 
     return rankedQueries
 

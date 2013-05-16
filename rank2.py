@@ -1,6 +1,6 @@
 import sys
 import re
-from math import log
+import math
 
 #inparams
 #  featureFile: input file containing queries and url features
@@ -11,6 +11,13 @@ def extractFeatures(featureFile):
     f = open(featureFile, 'r')
     queries = {}
     features = {}
+    count = {}
+    count["num_url"] = 0
+    count["len_url"] = 0
+    count["len_title"] = 0
+    count["len_header"] = 0
+    count["len_body"] = 0
+    count["len_anchor"] = 0
 
     for line in f:
       key = line.split(':', 1)[0].strip()
@@ -21,14 +28,18 @@ def extractFeatures(featureFile):
         features[query] = {}
       elif(key == 'url'):
         url = value
+        count["num_url"] += 1
+        count["len_url"] += len(value)
         queries[query].append(url)
         features[query][url] = {}
       elif(key == 'title'):
         features[query][url][key] = value
+        count["len_title"] += len(value.split())
       elif(key == 'header'):
         curHeader = features[query][url].setdefault(key, [])
         curHeader.append(value)
         features[query][url][key] = curHeader
+        count["len_header"] += len(value.split())
       elif(key == 'body_hits'):
         if key not in features[query][url]:
           features[query][url][key] = {}
@@ -37,94 +48,125 @@ def extractFeatures(featureFile):
                     = [int(i) for i in temp[1].strip().split()]
       elif(key == 'body_length' or key == 'pagerank'):
         features[query][url][key] = int(value)
+        if key == 'body_length':
+          count["len_body"] += int(value)
       elif(key == 'anchor_text'):
         anchor_text = value
+        count["len_anchor"] += len(anchor_text.split())
         if 'anchors' not in features[query][url]:
           features[query][url]['anchors'] = {}
       elif(key == 'stanford_anchor_count'):
         features[query][url]['anchors'][anchor_text] = int(value)
       
     f.close()
-    return (queries, features) 
+    return (queries, features, count) 
 
 #inparams
 #  queries: map containing list of results for each query
 #  features: map containing features for each query,url pair
 #return value
 #  rankedQueries: map containing ranked results for each query
-def baseline(queries, features, dfDict, totalDocNum):
+def baseline(queries, features, dfDict, totalDocNum, count):
     rankedQueries = {}
 
+
+    avgurl = count["len_url"] * 1.0 / count["num_url"] 
+    avgtitle = count["len_title"] * 1.0 / count["num_url"]
+    avgheader = count["len_header"] * 1.0 / count["num_url"]
+    avgbody = count["len_body"] * 1.0 / count["num_url"]
+    avganchor = count["len_anchor"] * 1.0 / count["num_url"]
+
     # Parameters for tf counts for doc
-    c_url = 1
-    c_title = 1
-    c_header = 1
-    c_body = 1
-    c_anchor = 1
+    b_url = 1
+    b_title = 1
+    b_header = 1
+    b_body = 1
+    b_anchor = 1
+    w_url = 1
+    w_title = 1
+    w_header = 1
+    w_body = 1
+    w_anchor = 1
+    lamb = 2
+    lamb_p = 1
+    k_1 = 5
 
     for query in queries.keys():
       results = queries[query]
-      # query idf (tf not needed. All 1's)
-      terms = query.split(" ")
-      query_idf_list = []
-      float sqr_sum = 0
-      for term in terms:
-        df = dfDict[term]
-        idf = math.log10(totalDocNum/df)
-        query_idf_list.append(idf)
-        sqr_sum = sqr_sum + idf*idf
-      # Normalization
-      for i in range(0, len(query_idf_list)):
-        newX = query_idf_list[i]/math.sqrt(sqr_sum)
-        query_idf_list[i] = newX
-      query_vector = query_idf_list
-      
-      cos_scores = {}
-      # doc tf (idf ignored for doc)
-      urls = features[query]
-      for url in urls:
-        info = features[query][url]
-        doc_vector = []
-        body_length = info["body_length"] + 500
-        for term in terms:
-          tf_url = 0
-          for i in range(0, len(url)-len(term)+1):
-            if url[i:i+len(term)] == term:
-              tf_url++
-          tf_title = 0
-          for word in info["title"].split(" "):
-            if word == term:
-              tf_title++
-          tf_header = 0
-          for header in info["header"]:
-            for word in header.split(" "):
-              if word == term:
-                tf_header++
-          tf_body = len(info["body_hits"][term])
-          tf_anchor = 0
-          if "anchors" in info.keys():
-            for text in info["anchors"].keys():
-              count_per_anchor = 0
-              for word in text.split(" "):
-                if word == term:
-                  count_per_anchor++
-              tf_anchor = tf_anchor + count_per_anchor * info["anchors"][text]
+      terms = query.split()
+      scores = {}
+      for doc_url in results:
+        url = re.findall(r"['\w']+:", doc_url)
+        doc_score = 0.0
+        for t in terms:
+          wdt = 0.0
+          info = features[query][doc_url]
+          #ftf for url
+          fturl = 0.0
+          tfurl = 0
+          for u in url:
+            if t == u:
+              tfurl += 1
+          fturl += 1.0 * tfurl / (1 + b_url * ((len(doc_url) / avgurl) - 1))
+          wdt += w_url * fturl 
+          #ftf for title
+          fttitle = 0.0
+          tftitle = 0
+          t_l = info["title"].split()
+          for word in t_l:
+            if word == t:
+              tftitle += 0
+          if len(t_l) > 0:
+            fttitle += 1.0 * tftitle / (1 + b_title * ((len(t_l) / avgtitle) - 1))
+            wdt += w_title * fttitle
+          #tft for header
+          if "header" in info:
+            ftheader = 0.0
+            tfheader = 0
+            lenhead = 0
+            for header in info["header"]:
+              lenhead += len(header.split())
+              for word in header.split():
+                if word == t:
+                  tfheader += 1
+            ftheader += 1.0 * tfheader / (1 + b_header * ((lenhead / avgheader) - 1))
+            wdt += w_header * ftheader
+          # ftf for body
+          if "body_hits" in info:
+            ftbody = 0.0
+            tfbody = 0
+            if t in info["body_hits"]:
+              tfbody = len(info["body_hits"][t])
+            ftbody += 1.0 * tfbody / (1 + b_body * ((info["body_length"] / avgbody) - 1))
+            wdt += w_body * ftbody
+          # ftf for anchor
+          if "anchor" in info:
+            ftanchor = 0.0
+            tfanchor = 0
+            anchor_len = 0
+            for text in info["anchors"]:
+              c_p_a = 0
+              anchor_len += len(text.split())
+              for word in text.split():
+                if word == t:
+                  c_p_a += 1
+              tfanchor += c_p_a * info["anchors"][text]
+            ftanchor += 1.0 * tfanchor / (1 + b_anchor * ((anchor_len / avganchor) - 1))
+            wdt += w_anchor * ftanchor
           
-          tf_total = c_url*tf_url + c_title*tf_title + c_header*tf_header + c_body*tf_body + c_anchor*tf_anchor
-          tf_log = 0
-          if tf_total > 0:
-            tf_log = 1 + math.log(tf_total)
-          tf_normal = tf_log / body_length
-          doc_vector.append(tf_normal)
-
-        cos_score = 0
-        for i in range(0, len(terms)):
-          cos_score = cos_score + doc_vector[i]*query_vector[i]
-        cos_scores[url] = cos_score
-      
-      # Sort query results with cos_scores in decreasing order 
-      sorted(cos_scores.items(), key=lambda x: x[1])
-      rankedQueries[query] = cos_scores 
+          #nontextual: pagerank
+          nont = lamb * 1.0 * math.log(lamb_p + info["pagerank"])
+ 
+          #idf
+          if t not in dfDict:
+            df = 1
+          else:
+            df = dfDict[t] + 1
+          idf = math.log((totalDocNum + 1)/df)
+          
+          doc_score += wdt * idf / (k_1 + wdt) + nont
+        scores[doc_url] = doc_score
+      rankedQueries[query] = sorted(results, key = lambda x: scores[x], reverse=True) 
     return rankedQueries
 
 # getIdf gets returns a total number of doc and doc_freq_dict
@@ -177,13 +219,13 @@ def main(featureFile):
     outputFile = "ranked.txt" #Please don't change this!
 
     #populate map with features from file
-    (queries, features) = extractFeatures(featureFile)
+    (queries, features, count) = extractFeatures(featureFile)
 
     #get idf values
     (totalDocNum, dfDict) = getIdf()
 
     #calling baseline ranking system, replace with yours
-    rankedQueries = baseline(queries, features, dfDict, totalDocNum)
+    rankedQueries = baseline(queries, features, dfDict, totalDocNum, count)
     
     #print ranked results to file
     printRankedResults(rankedQueries)

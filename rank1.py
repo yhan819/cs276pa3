@@ -56,11 +56,11 @@ def baseline(queries, features, dfDict, totalDocNum):
     rankedQueries = {}
 
     # Parameters for BM25F counts for doc
-    c_url = 1
-    c_title = 1
-    c_header = 1
-    c_body = 1
-    c_anchor = 1
+    c_url = 4
+    c_title = 2
+    c_header = 2
+    c_body = 0.1
+    c_anchor = 1.5
 
     for query in queries:
       results = queries[query]
@@ -100,11 +100,11 @@ def baseline(queries, features, dfDict, totalDocNum):
                   tf_header = tf_header + 1
           tf_body = 0
           if "body_hits" in info:
-            if term in info["body_hits"].keys():
+            if term in info["body_hits"]:
               tf_body = len(info["body_hits"][term])
           tf_anchor = 0
           if "anchors" in info:
-            for text in info["anchors"].keys():
+            for text in info["anchors"]:
               count_per_anchor = 0
               for word in text.split(" "):
                 if word == term:

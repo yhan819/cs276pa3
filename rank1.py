@@ -1,6 +1,6 @@
 import sys
 import re
-from math import log
+import math
 
 #inparams
 #  featureFile: input file containing queries and url features
@@ -52,31 +52,27 @@ def extractFeatures(featureFile):
 #  features: map containing features for each query,url pair
 #return value
 #  rankedQueries: map containing ranked results for each query
-def baseline(queries, features, dfDict, totalDocNum):
+def baseline(queries, features, dfDict, totalDocNum, params):
     rankedQueries = {}
 
     # Parameters for tf counts for doc
-    c_url = 1
-    c_title = 1
-    c_header = 1
-    c_body = 1
-    c_anchor = 1
+    c_url = int(params[0])
+    c_title = int(params[1])
+    c_header = int(params[2])
+    c_body = int(params[3])
+    c_anchor = int(params[4])
 
-    for query in queries.keys():
+    for query in queries:
       results = queries[query]
       # query idf (tf not needed. All 1's)
       terms = query.split(" ")
       query_idf_list = []
-      float sqr_sum = 0
       for term in terms:
-        df = dfDict[term]
-        idf = math.log10(totalDocNum/df)
+        df = 1
+        if term in dfDict:
+          df = df + dfDict[term]
+        idf = (1.0 *(totalDocNum + 1)) / df#math.log((totalDocNum + 1)/df)
         query_idf_list.append(idf)
-        sqr_sum = sqr_sum + idf*idf
-      # Normalization
-      for i in range(0, len(query_idf_list)):
-        newX = query_idf_list[i]/math.sqrt(sqr_sum)
-        query_idf_list[i] = newX
       query_vector = query_idf_list
       
       cos_scores = {}
@@ -85,36 +81,41 @@ def baseline(queries, features, dfDict, totalDocNum):
       for url in urls:
         info = features[query][url]
         doc_vector = []
-        body_length = info["body_length"] + 500
+        body_length = info["body_length"] + 100
         for term in terms:
           tf_url = 0
           for i in range(0, len(url)-len(term)+1):
             if url[i:i+len(term)] == term:
-              tf_url++
+              tf_url = tf_url + 1
           tf_title = 0
-          for word in info["title"].split(" "):
-            if word == term:
-              tf_title++
-          tf_header = 0
-          for header in info["header"]:
-            for word in header.split(" "):
+          if "title" in info:
+            for word in info["title"].split(" "):
               if word == term:
-                tf_header++
-          tf_body = len(info["body_hits"][term])
+                tf_title = tf_title + 1
+          tf_header = 0
+	  if "header" in info:
+            for header in info["header"]:
+              for word in header.split(" "):
+                if word == term:
+                  tf_header = tf_header + 1
+          tf_body = 0
+          if "body_hits" in info:
+            if term in info["body_hits"].keys():
+              tf_body = len(info["body_hits"][term])
           tf_anchor = 0
-          if "anchors" in info.keys():
+          if "anchors" in info:
             for text in info["anchors"].keys():
               count_per_anchor = 0
               for word in text.split(" "):
                 if word == term:
-                  count_per_anchor++
+                  count_per_anchor = count_per_anchor + 1
               tf_anchor = tf_anchor + count_per_anchor * info["anchors"][text]
           
           tf_total = c_url*tf_url + c_title*tf_title + c_header*tf_header + c_body*tf_body + c_anchor*tf_anchor
-          tf_log = 0
-          if tf_total > 0:
-            tf_log = 1 + math.log(tf_total)
-          tf_normal = tf_log / body_length
+          tf_normal = (1.0 * tf_total) / body_length
+          #tf_log = 0
+          #if tf_normal > 0:
+            #tf_log = 1 + math.log(tf_normal)
           doc_vector.append(tf_normal)
 
         cos_score = 0
@@ -123,8 +124,7 @@ def baseline(queries, features, dfDict, totalDocNum):
         cos_scores[url] = cos_score
       
       # Sort query results with cos_scores in decreasing order 
-      sorted(cos_scores.items(), key=lambda x: x[1])
-      rankedQueries[query] = cos_scores 
+      rankedQueries[query] = sorted(results, key=lambda x: cos_scores[x], reverse=True)
     return rankedQueries
 
 # getIdf gets returns a total number of doc and doc_freq_dict
@@ -146,7 +146,6 @@ def getIdf():
   file = open(doc_f, 'r')
   for l in file.readlines():
     docNum += 1
-  print >> sys.stderr, "totalNum = " + str(docNum)
   
   file = open(term_id_f, 'r')
   for line in file.readlines():
@@ -172,7 +171,7 @@ def printRankedResults(queries):
 
 #inparams
 #  featureFile: file containing query and url features
-def main(featureFile):
+def main(featureFile, params):
     #output file name
     outputFile = "ranked.txt" #Please don't change this!
 
@@ -183,7 +182,7 @@ def main(featureFile):
     (totalDocNum, dfDict) = getIdf()
 
     #calling baseline ranking system, replace with yours
-    rankedQueries = baseline(queries, features, dfDict, totalDocNum)
+    rankedQueries = baseline(queries, features, dfDict, totalDocNum, params)
     
     #print ranked results to file
     printRankedResults(rankedQueries)
@@ -191,4 +190,4 @@ def main(featureFile):
 if __name__=='__main__':
     if (len(sys.argv) < 2):
       print "Insufficient number of arguments" 
-    main(sys.argv[1])
+    main(sys.argv[1], sys.argv[2:])
